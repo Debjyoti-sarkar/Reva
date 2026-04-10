@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Environment
+.env
+*.env.local
+
+# Models (large binary files – store in object storage)
+models/*.pkl
+models/*.h5
+models/*.pt
+
+# Node.js
+frontend/node_modules/
+frontend/build/
+frontend/.env
+frontend/.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Algorand
+*.avm
+*.token
+
+# Logs
+*.log
+logs/

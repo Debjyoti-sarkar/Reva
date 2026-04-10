@@ -1,0 +1,1 @@
+# NexaVault config package
