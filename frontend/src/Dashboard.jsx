@@ -14,6 +14,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { usePeraWallet } from "./peraConnect";
+import VoicePanel from "./VoicePanel";
+import SimulatorPanel from "./SimulatorPanel";
 
 const API_BASE = process.env.REACT_APP_API_URL ?? "http://localhost:8000";
 
@@ -197,6 +199,12 @@ export default function Dashboard() {
           </sub>
         )}
       </Card>
+
+      {/* ── Voice Panel ───────────────────────────────────────────────────── */}
+      <VoicePanel />
+
+      {/* ── Simulator Panel ───────────────────────────────────────────────── */}
+      <SimulatorPanel />
 
       {/* ── Trading Controls ──────────────────────────────────────────────── */}
       <Card title="🤖 Autonomous Trading">

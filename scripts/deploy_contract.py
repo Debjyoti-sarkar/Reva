@@ -24,6 +24,10 @@ Prerequisites
 After deployment, copy the printed APP_ID into config/settings.py
 or your .env file:  APP_ID=<returned_value>
 """
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 import argparse
 import base64

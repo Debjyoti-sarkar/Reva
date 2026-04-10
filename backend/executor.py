@@ -199,6 +199,112 @@ async def execute_trade_signal(price_contract: int, action: str) -> dict:
 
 
 async def execute_deposit(amount_microalgo: int) -> dict:
+    """
+    Record a deposit transaction to the vault smart contract.
+
+    Args:
+        amount_microalgo: ALGO amount in microALGO
+
+    Returns:
+        Confirmation dict
+    """
+    logger.info("execute_deposit: %s µALGO", amount_microalgo)
+    result = await send_noop_txn(
+        op="deposit",
+        extra_args=[amount_microalgo],
+    )
+    result["amount"] = amount_microalgo
+    return result
+
+
+async def execute_withdraw(amount_microalgo: int) -> dict:
+    """
+    Withdraw ALGO from the vault (owner-gated by smart contract).
+
+    Args:
+        amount_microalgo: ALGO amount in microALGO
+
+    Returns:
+        Confirmation dict
+    """
+    logger.info("execute_withdraw: %s µALGO", amount_microalgo)
+    result = await send_noop_txn(
+        op="withdraw",
+        extra_args=[amount_microalgo],
+    )
+    result["amount"] = amount_microalgo
+    return result
+
+
+async def get_vault_state() -> dict:
+    """
+    Fetch the current vault state from the smart contract.
+
+    Returns:
+        Dict with:
+            {
+                "buy_price"   : int,
+                "sell_price"  : int,
+                "last_price"  : int,
+                "last_action" : str,
+                "trade_count" : int,
+                "owner"       : str,
+            }
+    """
+    if APP_ID == 0:
+        return {
+            "buy_price": 150_000_000,
+            "sell_price": 220_000_000,
+            "last_price": 0,
+            "last_action": "none",
+            "trade_count": 0,
+            "owner": "N/A (APP_ID=0)",
+        }
+
+    try:
+        client = get_algod_client()
+        app_info = client.application_info(APP_ID)
+        state = app_info.get("params", {}).get("global-state", [])
+
+        result = {}
+        for item in state:
+            key = item.get("key")
+            if isinstance(key, str):
+                key = key
+            val = item.get("value", {})
+
+            if key == "buy_price":
+                result["buy_price"] = val.get("uint", 0)
+            elif key == "sell_price":
+                result["sell_price"] = val.get("uint", 0)
+            elif key == "last_price":
+                result["last_price"] = val.get("uint", 0)
+            elif key == "last_action":
+                import base64
+                result["last_action"] = (
+                    base64.b64decode(val.get("bytes", "")).decode()
+                    if val.get("bytes")
+                    else "unknown"
+                )
+            elif key == "trade_count":
+                result["trade_count"] = val.get("uint", 0)
+            elif key == "owner":
+                import base64
+                result["owner"] = (
+                    base64.b64decode(val.get("bytes", "")).decode()
+                    if val.get("bytes")
+                    else "unknown"
+                )
+
+        logger.info("Vault state fetched: %s", result)
+        return result
+
+    except Exception as exc:
+        logger.error("Failed to fetch vault state: %s", exc)
+        return {"error": str(exc)}
+
+
+async def execute_deposit(amount_microalgo: int) -> dict:
     """Record a deposit event on-chain."""
     return await send_noop_txn(op="deposit", extra_args=[amount_microalgo])
 

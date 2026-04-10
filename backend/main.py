@@ -16,7 +16,10 @@ Endpoints
 Run with:
     uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 """
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 import logging
 import os
 import time
@@ -34,6 +37,8 @@ from backend.executor import (
 )
 from backend.tinyman_swap import execute_swap
 from backend.services.price_feed import get_algo_price
+from backend.voice_commands import VoiceCommandParser
+from backend.simulator import TradingSimulator
 from config.settings import (
     APP_ID, TRADE_AMOUNT_MICROALGO, SLIPPAGE,
     ALLOWED_ORIGINS, LOG_LEVEL,
@@ -76,6 +81,12 @@ _state: dict = {
     "started_at"       : None,
 }
 
+# ──────────────────────────────────────────────────
+# Simulator & Voice Command initialization
+# ──────────────────────────────────────────────────
+_voice_parser = VoiceCommandParser()
+_simulator = TradingSimulator(initial_balance_usdc=10000.0)
+
 
 # ─────────────────────────────────────────────
 # Pydantic request / response models
@@ -96,6 +107,21 @@ class DepositRequest(BaseModel):
 
 class WithdrawRequest(BaseModel):
     amount_microalgo: int
+
+
+class VoiceParseRequest(BaseModel):
+    voice_text: str
+    confidence: Optional[float] = 0.8
+
+
+class SimulatorTradeRequest(BaseModel):
+    amount_algo: float
+    confidence: Optional[float] = 0.9
+
+
+class SimulatorPriceRequest(BaseModel):
+    price: float
+    mode: Optional[str] = "manual"
 
 
 # ─────────────────────────────────────────────
@@ -321,4 +347,217 @@ async def withdraw(body: WithdrawRequest):
         return result
     except Exception as exc:
         logger.error("Withdraw failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── /voice/parse ──────────────────────────────────────────────────────────────
+
+@app.post("/voice/parse", tags=["Voice"])
+async def parse_voice_command(body: VoiceParseRequest):
+    """
+    Parse natural language voice text into structured trading commands.
+    
+    Example input: "buy 5 algos at 0.175"
+    Returns: {"command_type": "BUY", "amount_algo": 5.0, "price": 0.175, ...}
+    """
+    try:
+        parsed = _voice_parser.parse(body.voice_text)
+        
+        if not parsed:
+            return {
+                "success": False,
+                "error": "Could not understand command",
+                "input": body.voice_text,
+            }
+        
+        logger.info(
+            "Voice command parsed: type=%s amount=%.2f price=%.6f",
+            parsed.command_type.value, parsed.amount_algo, parsed.price or 0,
+        )
+        
+        return {
+            "success": True,
+            "command_type": parsed.command_type.value,
+            "amount_algo": parsed.amount_algo,
+            "price": parsed.price,
+            "confidence": parsed.confidence,
+            "input": body.voice_text,
+        }
+    except Exception as exc:
+        logger.error("Voice parse error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── /simulator/state ──────────────────────────────────────────────────────────
+
+@app.get("/simulator/state", tags=["Simulator"])
+async def get_simulator_state():
+    """Return the current simulator state: portfolio, price, position."""
+    try:
+        state = _simulator.get_state()
+        portfolio = _simulator.get_portfolio_composition()
+        pnl = _simulator.get_pnl()
+        
+        return {
+            "price": state.current_price,
+            "portfolio": {
+                "total_value_usdc": portfolio["total_value"],
+                "balance_algo": portfolio["algo_balance"],
+                "balance_usdc": portfolio["usdc_balance"],
+                "algo_percentage": portfolio["algo_pct"],
+                "usdc_percentage": portfolio["usdc_pct"],
+            },
+            "pnl": {
+                "realized_pnl": pnl["realized"],
+                "unrealized_pnl": pnl["unrealized"],
+                "total_pnl": pnl["total"],
+                "num_trades": len(state.trades),
+            },
+        }
+    except Exception as exc:
+        logger.error("Simulator state fetch error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── /simulator/buy ────────────────────────────────────────────────────────────
+
+@app.post("/simulator/buy", tags=["Simulator"])
+async def simulator_buy(body: SimulatorTradeRequest):
+    """Execute a buy order in the simulator."""
+    try:
+        state = _simulator.get_state()
+        result = _simulator.buy(body.amount_algo, body.confidence)
+        
+        if not result["success"]:
+            logger.warning("Buy failed: %s", result.get("error"))
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        
+        logger.info("Simulator buy: %.4f ALGO @ $%.6f", body.amount_algo, state.current_price)
+        
+        return {
+            "success": True,
+            "action": "buy",
+            "amount_algo": body.amount_algo,
+            "price": state.current_price,
+            "total_usdc": body.amount_algo * state.current_price,
+            "message": result.get("message"),
+        }
+    except Exception as exc:
+        logger.error("Simulator buy error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── /simulator/sell ───────────────────────────────────────────────────────────
+
+@app.post("/simulator/sell", tags=["Simulator"])
+async def simulator_sell(body: SimulatorTradeRequest):
+    """Execute a sell order in the simulator."""
+    try:
+        state = _simulator.get_state()
+        result = _simulator.sell(body.amount_algo, body.confidence)
+        
+        if not result["success"]:
+            logger.warning("Sell failed: %s", result.get("error"))
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        
+        logger.info("Simulator sell: %.4f ALGO @ $%.6f", body.amount_algo, state.current_price)
+        
+        return {
+            "success": True,
+            "action": "sell",
+            "amount_algo": body.amount_algo,
+            "price": state.current_price,
+            "total_usdc": body.amount_algo * state.current_price,
+            "message": result.get("message"),
+        }
+    except Exception as exc:
+        logger.error("Simulator sell error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── /simulator/price ──────────────────────────────────────────────────────────
+
+@app.post("/simulator/price", tags=["Simulator"])
+async def simulator_update_price(body: SimulatorPriceRequest):
+    """Update simulator price (manual or auto mode)."""
+    try:
+        _simulator.update_price(body.price)
+        state = _simulator.get_state()
+        
+        logger.info("Simulator price updated: $%.6f (mode=%s)", body.price, body.mode)
+        
+        return {
+            "success": True,
+            "new_price": state.current_price,
+            "mode": body.mode,
+        }
+    except Exception as exc:
+        logger.error("Simulator price update error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── /simulator/trades ─────────────────────────────────────────────────────────
+
+@app.get("/simulator/trades", tags=["Simulator"])
+async def get_simulator_trades():
+    """Get trade history from the simulator."""
+    try:
+        state = _simulator.get_state()
+        
+        trades = [
+            {
+                "action": t["action"],
+                "amount": t["amount_algo"],
+                "price": t["price"],
+                "total": t["total_usdc"],
+                "timestamp": t["timestamp"],
+            }
+            for t in state.trades
+        ]
+        
+        return {
+            "trades": trades,
+            "count": len(trades),
+        }
+    except Exception as exc:
+        logger.error("Simulator trades fetch error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── /simulator/reset ──────────────────────────────────────────────────────────
+
+@app.post("/simulator/reset", tags=["Simulator"])
+async def simulator_reset():
+    """Reset the simulator to initial state."""
+    try:
+        global _simulator
+        _simulator = TradingSimulator(initial_balance_usdc=10000.0)
+        logger.info("Simulator reset to initial state")
+        
+        return {
+            "success": True,
+            "message": "Simulator reset to initial state",
+        }
+    except Exception as exc:
+        logger.error("Simulator reset error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── /simulator/auto ───────────────────────────────────────────────────────────
+
+@app.post("/simulator/auto", tags=["Simulator"])
+async def simulator_auto_trade(body: dict):
+    """Enable/disable automatic price simulation and trading."""
+    try:
+        enabled = body.get("enabled", False)
+        _state["simulator_auto"] = enabled
+        logger.info("Simulator auto trading: %s", "enabled" if enabled else "disabled")
+        
+        return {
+            "success": True,
+            "auto_enabled": enabled,
+            "message": "Simulator auto trading " + ("enabled" if enabled else "disabled"),
+        }
+    except Exception as exc:
+        logger.error("Simulator auto toggle error: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
