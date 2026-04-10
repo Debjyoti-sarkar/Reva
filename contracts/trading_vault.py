@@ -9,7 +9,7 @@ Deploy via: scripts/deploy_contract.py
 
 from pyteal import (
     Approve, Bytes, Cond, Err, Global, Int, Mode,
-    OnCompletion, Reject, Seq, Assert, App, Txn,
+    Reject, Seq, Assert, App, Txn,
     compileTeal, Btoi, Len, Concat, Log, And, Or,
     TxnType, InnerTxnBuilder, TxnField, InnerTxn,
     ScratchVar, TealType, If, Not, Balance, Addr
@@ -154,14 +154,14 @@ def approval_program():
     program = Cond(
         # App creation (no OnCompletion, no args needed yet)
         [Txn.application_id() == Int(0), on_create],
-        # Normal calls
-        [Txn.on_completion() == OnCompletion.NoOp,
+        # Normal calls (OnCompletion.NoOp = 0)
+        [Txn.on_completion() == Int(0),
          If(Txn.application_args.length() >= Int(1), router, Reject())],
-        # DeleteApplication – owner only
-        [Txn.on_completion() == OnCompletion.DeleteApplication,
+        # DeleteApplication – owner only (OnCompletion.DeleteApplication = 5)
+        [Txn.on_completion() == Int(5),
          Seq(Assert(is_creator), Approve())],
-        # UpdateApplication – owner only
-        [Txn.on_completion() == OnCompletion.UpdateApplication,
+        # UpdateApplication – owner only (OnCompletion.UpdateApplication = 4)
+        [Txn.on_completion() == Int(4),
          Seq(Assert(is_creator), Approve())],
         # Everything else → reject
         [Int(1) == Int(1), Reject()],

@@ -1,0 +1,225 @@
+#pragma version 6
+txn ApplicationID
+int 0
+==
+bnz main_l27
+txn OnCompletion
+int 0
+==
+bnz main_l9
+txn OnCompletion
+int 5
+==
+bnz main_l8
+txn OnCompletion
+int 4
+==
+bnz main_l7
+int 1
+int 1
+==
+bnz main_l6
+err
+main_l6:
+int 0
+return
+main_l7:
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return
+main_l8:
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return
+main_l9:
+txn NumAppArgs
+int 1
+>=
+bnz main_l11
+int 0
+return
+main_l11:
+txna ApplicationArgs 0
+byte "create"
+==
+bnz main_l26
+txna ApplicationArgs 0
+byte "update"
+==
+bnz main_l25
+txna ApplicationArgs 0
+byte "trade"
+==
+bnz main_l19
+txna ApplicationArgs 0
+byte "deposit"
+==
+bnz main_l18
+txna ApplicationArgs 0
+byte "withdraw"
+==
+bnz main_l17
+err
+main_l17:
+txn Sender
+byte "owner"
+app_global_get
+==
+assert
+txn NumAppArgs
+int 2
+==
+assert
+byte "NexaVault: withdrawal approved"
+log
+int 1
+return
+main_l18:
+byte "NexaVault: deposit accepted"
+log
+int 1
+return
+main_l19:
+txn Sender
+byte "owner"
+app_global_get
+==
+assert
+txn NumAppArgs
+int 2
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 0
+byte "last_price"
+load 0
+app_global_put
+load 0
+byte "buy_price"
+app_global_get
+<=
+bnz main_l24
+load 0
+byte "sell_price"
+app_global_get
+>=
+bnz main_l23
+byte "hold"
+store 1
+byte "last_action"
+byte "hold"
+app_global_put
+byte "NexaVault: action=hold"
+log
+main_l22:
+int 1
+return
+main_l23:
+byte "sell"
+store 1
+byte "last_action"
+byte "sell"
+app_global_put
+byte "trade_count"
+byte "trade_count"
+app_global_get
+int 1
++
+app_global_put
+byte "NexaVault: action=sell price="
+txna ApplicationArgs 1
+concat
+log
+b main_l22
+main_l24:
+byte "buy"
+store 1
+byte "last_action"
+byte "buy"
+app_global_put
+byte "trade_count"
+byte "trade_count"
+app_global_get
+int 1
++
+app_global_put
+byte "NexaVault: action=buy price="
+txna ApplicationArgs 1
+concat
+log
+b main_l22
+main_l25:
+txn Sender
+byte "owner"
+app_global_get
+==
+assert
+txn NumAppArgs
+int 3
+==
+assert
+byte "buy_price"
+txna ApplicationArgs 1
+btoi
+app_global_put
+byte "sell_price"
+txna ApplicationArgs 2
+btoi
+app_global_put
+byte "NexaVault: thresholds updated"
+log
+int 1
+return
+main_l26:
+byte "owner"
+txn Sender
+app_global_put
+byte "buy_price"
+int 150000000
+app_global_put
+byte "sell_price"
+int 200000000
+app_global_put
+byte "last_action"
+byte "none"
+app_global_put
+byte "last_price"
+int 0
+app_global_put
+byte "trade_count"
+int 0
+app_global_put
+byte "NexaVault: vault created"
+log
+int 1
+return
+main_l27:
+byte "owner"
+txn Sender
+app_global_put
+byte "buy_price"
+int 150000000
+app_global_put
+byte "sell_price"
+int 200000000
+app_global_put
+byte "last_action"
+byte "none"
+app_global_put
+byte "last_price"
+int 0
+app_global_put
+byte "trade_count"
+int 0
+app_global_put
+byte "NexaVault: vault created"
+log
+int 1
+return
